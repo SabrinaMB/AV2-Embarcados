@@ -6410,3 +6410,9 @@ static const tChar digital52_array[] = {
 };
 
 const tFont digital52 = { 95, digital52_array,  ' ', '~' };
+
+
+void printa_texto(const char *text, int x, int y) {
+    ili9488_set_foreground_color(COLOR_CONVERT(COLOR_BLACK));
+    ili9488_draw_string(x, y, text);
+}
