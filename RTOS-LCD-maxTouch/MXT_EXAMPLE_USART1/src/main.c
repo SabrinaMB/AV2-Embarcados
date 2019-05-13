@@ -126,6 +126,14 @@ struct ili9488_opt_t g_ili9488_display_opt;
 /** Semaforo a ser usado pela task led */
 SemaphoreHandle_t xSemaphore;
 
+// Botão 1
+#define BUT_PIO1      PIOD
+#define BUT_PIO_ID1   ID_PIOD
+#define BUT_IDX1  28
+#define BUT_IDX_MASK1 (1 << BUT_IDX1)
+
+
+
 void font_draw_text(tFont *font, const char *text, int x, int y, int spacing) {
 	char *p = text;
 	while(*p != NULL) {
@@ -185,6 +193,7 @@ void temp_callback(void)
 {
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	xSemaphoreGiveFromISR(xSemaphore, &xHigherPriorityTaskWoken);
+	
 	
 }
 
@@ -345,6 +354,24 @@ static void mxt_init(struct mxt_device *device)
 /************************************************************************/
 /* funcoes                                                              */
 /************************************************************************/
+static int32_t convert_adc_to_temp(int32_t ADC_value){
+
+  int32_t ul_vol;
+  int32_t ul_temp;
+
+  /*
+   * converte bits -> tensão (Volts)
+   */
+	ul_vol = ADC_value * VOLT_REF / (float) MAX_DIGITAL;
+
+  /*
+   * According to datasheet, The output voltage VT = 0.72V at 27C
+   * and the temperature slope dVT/dT = 2.33 mV/C
+   */
+  ul_temp = (ul_vol - 720)  * 100 / 233 + 27;
+  return(ul_temp);
+}
+
 
 static void config_ADC_TEMP(void){
 /*************************************
@@ -425,8 +452,6 @@ void desenha_icone(tImage icone, int x, int y){
 }
 
 
-
-
 uint32_t convert_axis_system_x(uint32_t touch_y) {
 	// entrada: 4096 - 0 (sistema de coordenadas atual)
 	// saida: 0 - 320
@@ -498,28 +523,42 @@ void mxt_handler(struct mxt_device *device, uint *x, uint *y)
 /* tasks                                                                */
 /************************************************************************/
 
-static void task_temp(void *pvParameters)
+void task_temp(void *pvParameters)
 {
 	/* We are using the semaphore for synchronisation so we create a binary
         semaphore rather than a mutex.  We must make sure that the interrupt
         does not attempt to use the semaphore before it is created! */
 	xSemaphore = xSemaphoreCreateBinary();
+	UNUSED(pvParameters);
 	
 	config_ADC_TEMP();
+	//afec_start_software_conversion(AFEC0);
 	
 	if (xSemaphore == NULL) {
-		printf("falha em criar o semaforo \n");
+		font_draw_text(&digital52, "falha em criar o semaforo", 30, 30, 1);
 	}
 	
+	char s[32];
+	
 	const TickType_t xDelay = 50 / portTICK_PERIOD_MS;
+	
+	//font_draw_text(&digital52, "oi", 30, 30, 1);
 	
 	for (;;) {
 		if( xSemaphoreTake(xSemaphore, ( TickType_t ) xDelay) == pdTRUE ){
 			/*lalala*/
 			g_ul_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_TEMP_SENSOR);
 			g_is_conversion_done = true;
+			//font_draw_text(&digital52, "oi", 30, 30, 1);
+			
+			printf("valor: %d", g_ul_value);
+			
 		}
+		//font_draw_text(&digital52, "oi", 30, 30, 1);
+		//printf("valor: %d", g_ul_value);
+		vTaskDelay(500);
 	}
+	
 
 }
 
