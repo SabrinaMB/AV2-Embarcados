@@ -147,6 +147,10 @@ SemaphoreHandle_t xSemaphoreBut;
 /************************************************************************/
 /** The conversion data is done flag */
 volatile bool g_is_conversion_done = false;
+volatile bool modo_soneca = true;
+
+volatile int t = 0;
+volatile int desliga = 0;
 
 /** The conversion data value */
 volatile uint32_t g_ul_value = 0;
@@ -533,12 +537,13 @@ uint32_t convert_axis_system_y(uint32_t touch_x) {
 }
 
 void update_screen(uint32_t tx, uint32_t ty) {
-	ili9488_set_foreground_color(COLOR_CONVERT(COLOR_BLACK));
-	ili9488_draw_filled_circle(280, 220, 38);
 	desenha_icone(soneca, 240, 10);
 	desenha_icone(ar, 50, 340);
 	desenha_icone(termometro, 60, 200);
-	
+	if (tx >= 260 && ty<=70){
+		modo_soneca = !modo_soneca;
+		t = 0;
+	}
 	
 	
 }
@@ -560,8 +565,9 @@ void mxt_handler(struct mxt_device *device, uint *x, uint *y)
 
 		/* Read next next touch event in the queue, discard if read fails */
 		if (mxt_read_touch_event(device, &touch_event) != STATUS_OK) {
-			continue;
+			continue;	
 		}
+	
 		
     /************************************************************************/
     /* Envia dados via fila RTOS                                            */
@@ -571,12 +577,16 @@ void mxt_handler(struct mxt_device *device, uint *x, uint *y)
       *y = convert_axis_system_y(touch_event.x);
       first = 1;
     }
-    
 		i++;
 
 		/* Check if there is still messages in the queue and
 		 * if we have reached the maximum numbers of events */
 	} while ((mxt_is_message_pending(device)) & (i < MAX_ENTRIES));
+	if (touch_event.status > 60){
+		*x = 0;
+		*y = 0;
+	}
+	//vTaskDelay(200);
 }
 
 /************************************************************************/
@@ -599,6 +609,10 @@ static void task_but(void *pvParameters){
 			msg = msg + 10;
 			if (msg > 100){
 				msg = 0;
+			}
+			if(desliga){
+				msg = 0;
+				desliga = 0;
 			}
 			/* envia nova frequencia para a task_led */
 			xQueueSend(xQueueLedFreq, &msg, 10);
@@ -623,7 +637,12 @@ void task_pwm(void){
 	
 	while (true) {
 		if( xQueueReceive(xQueueLedFreq, &msg, ( TickType_t ) 0 )){
-			pwm_channel_update_duty(PWM0, &g_pwm_channel_led, msg);
+			if (desliga){
+				pwm_channel_update_duty(PWM0, &g_pwm_channel_led, 0);
+			} else{
+				pwm_channel_update_duty(PWM0, &g_pwm_channel_led, msg);
+			}
+			
 			vTaskDelay(10);
 		}
 		/* fade in */
@@ -669,12 +688,29 @@ void task_lcd(void){
   
   touchData touch;
   afecData afec;
-  uint32_t msg = 0 ;
-  
+  uint32_t msg = 0;
+
   while (true) {  
+	  if (modo_soneca){
+		  ili9488_set_foreground_color(COLOR_CONVERT(COLOR_BLUE));
+		  ili9488_draw_filled_circle(220, 20, 15);
+		  if (t >= 3*60){
+			  modo_soneca = false;
+			  desliga = 1;
+			  t = 0;
+		  }
+	  } else{
+		  ili9488_set_foreground_color(COLOR_CONVERT(COLOR_WHITE));
+		  ili9488_draw_filled_circle(220, 20, 15);
+	  }
 	  if( xQueueReceive(xQueueLCDFreq, &msg, ( TickType_t ) 0 )){
-		  sprintf(porcentagem, "%003d%%", msg);
-		  font_draw_text(&digital52, porcentagem, 150, 350, 1);
+		  if(desliga){
+			  sprintf(porcentagem, "%003d%%", 0);
+		  } else{
+			sprintf(porcentagem, "%003d%%", msg);
+		  }
+			font_draw_text(&digital52, porcentagem, 150, 350, 1);
+		  
 	  }
      if (xQueueReceive( xQueueTouch, &(touch), ( TickType_t )  500 / portTICK_PERIOD_MS)) {
        update_screen(touch.x, touch.y);
@@ -683,6 +719,8 @@ void task_lcd(void){
 	 if (xQueueReceive( xQueueAfec, &(afec), ( TickType_t )  500 / portTICK_PERIOD_MS)) {
 		sprintf(tempo, "%02d:%02d", afec.hora, afec.minuto);
 		sprintf(temperatura, "%003d", afec.temp);
+		ili9488_set_foreground_color(COLOR_CONVERT(COLOR_BLACK));
+		ili9488_draw_filled_circle(280, 220, 38);
 		ili9488_set_foreground_color(COLOR_CONVERT(translateColor(afec.temp*2.55, 0, 255-afec.temp*2.55)));
 		ili9488_draw_filled_circle(280, 220, 35);
 		font_draw_text(&digital52, tempo, 30, 30, 0);
@@ -724,6 +762,9 @@ void task_afec(void){
 		}
 		xQueueSend( xQueueAfec, &afec, 0);
 		afec.segundo++;
+		if (modo_soneca){
+			t++;
+		}
 		vTaskDelay(1250);
 	}
 }
