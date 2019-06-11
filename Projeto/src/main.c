@@ -95,6 +95,8 @@ QueueHandle_t xQueueUART;
 
 QueueHandle_t xQueueOLED;
 
+QueueHandle_t xQueueFreqLed;
+
 /************************************************************************/
 /* prototypes                                                           */
 /************************************************************************/
@@ -148,7 +150,8 @@ void button2_callback(void){
 void task_string(void *pvParameters){
     xQueueUART = xQueueCreate( 52, sizeof( char ) );
 	xQueueOLED = xQueueCreate( 2, sizeof( char[52] ) );
-
+	xQueueFreqLed = xQueueCreate( 2, sizeof( int ) );
+	int freq = 0; 
 	//char envia[52];
   char b[52];
   uint i = 0;
@@ -161,6 +164,11 @@ void task_string(void *pvParameters){
 				i = 0;
 				printf("recebido: %s\n", b);
 				printf("%d", protocol_check_led(b));
+				int valor = atoi(b);
+				if (valor){  // transforma em int
+					freq = valor;
+					xQueueSend(xQueueFreqLed, &freq, 10);
+				}
 				xQueueSend(xQueueOLED, b, 10);
 				if (protocol_check_led(b)){
 					BaseType_t xHigherPriorityTaskWoken = pdTRUE;
@@ -182,24 +190,28 @@ void task_io(void *pvParameters){
 	}
 	io_init();
 	int entrou = 0;
+	int freq = 100;
 	while(1){
 		if(entrou){
 			led_on(0, 1);
 			led_on(1, 1);
 			led_on(2, 1);
-			vTaskDelay(100);
+			vTaskDelay(freq);
 			led_on(0, 0);
 			led_on(1, 0);
 			led_on(2, 0);
-			vTaskDelay(100);
+			vTaskDelay(freq);
 		} else {
 			led_on(0, 1);
 			led_on(1, 1);
 			led_on(2, 1);
-			vTaskDelay(100);
+			vTaskDelay(freq);
 		}
 		if( xSemaphoreTakeFromISR(xSemaphoreLED, 0)){
 			entrou = !entrou;
+		}
+		if( xQueueReceive(xQueueFreqLed, &freq, ( TickType_t ) 0 )){
+			printf("%d", freq);
 		}
 	}
 }
